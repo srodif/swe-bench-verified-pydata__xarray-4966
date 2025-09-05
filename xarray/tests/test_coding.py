@@ -117,3 +117,57 @@ def test_scaling_offset_as_list(scale_factor, add_offset):
     encoded = coder.encode(original)
     roundtripped = coder.decode(encoded)
     assert_allclose(original, roundtripped)
+
+
+def test_UnsignedIntegerCoder_signed_to_unsigned():
+    """Test UnsignedIntegerCoder converts signed integers to unsigned with _Unsigned=true."""
+    original = xr.Variable(("x",), np.array([-128, -1, 0, 1, 127], dtype=np.int8), {"_Unsigned": "true"})
+    expected_data = np.array([128, 255, 0, 1, 127], dtype=np.uint8)
+    coder = variables.UnsignedIntegerCoder()
+    encoded = coder.decode(original)
+    assert encoded.dtype == np.uint8
+    np.testing.assert_array_equal(encoded.data, expected_data)
+    assert "_Unsigned" not in encoded.attrs
+
+
+def test_UnsignedIntegerCoder_unsigned_to_signed():
+    """Test UnsignedIntegerCoder converts unsigned integers to signed with _Unsigned=false."""
+    original = xr.Variable(("x",), np.array([128, 255, 0, 1, 127], dtype=np.uint8), {"_Unsigned": "false"})
+    expected_data = np.array([-128, -1, 0, 1, 127], dtype=np.int8)
+    coder = variables.UnsignedIntegerCoder()
+    encoded = coder.decode(original)
+    assert encoded.dtype == np.int8
+    np.testing.assert_array_equal(encoded.data, expected_data)
+    assert "_Unsigned" not in encoded.attrs
+
+
+def test_UnsignedIntegerCoder_fillvalue_unsigned_to_signed():
+    """Test UnsignedIntegerCoder converts _FillValue correctly with _Unsigned=false."""
+    original = xr.Variable(
+        ("x",), np.array([128, 255, 0, 1, 254], dtype=np.uint8), {"_Unsigned": "false", "_FillValue": np.uint8(254)}
+    )
+    expected_data = np.array([-128, -1, 0, 1, -2], dtype=np.int8)
+    expected_fillvalue = np.int8(-2)
+    coder = variables.UnsignedIntegerCoder()
+    encoded = coder.decode(original)
+    assert encoded.dtype == np.int8
+    np.testing.assert_array_equal(encoded.data, expected_data)
+    assert encoded.attrs["_FillValue"] == expected_fillvalue
+    assert isinstance(encoded.attrs["_FillValue"], np.int8)
+    assert "_Unsigned" not in encoded.attrs
+
+
+def test_UnsignedIntegerCoder_no_conversion_cases():
+    """Test UnsignedIntegerCoder doesn't convert in cases that should be ignored."""
+    # Case 1: unsigned with _Unsigned=true (should be ignored)
+    original1 = xr.Variable(("x",), np.array([128, 255, 0, 1, 127], dtype=np.uint8), {"_Unsigned": "true"})
+    coder = variables.UnsignedIntegerCoder()
+    result1 = coder.decode(original1)
+    assert result1.dtype == np.uint8
+    np.testing.assert_array_equal(result1.data, original1.data)
+    
+    # Case 2: signed with _Unsigned=false (should be ignored)
+    original2 = xr.Variable(("x",), np.array([-128, -1, 0, 1, 127], dtype=np.int8), {"_Unsigned": "false"})
+    result2 = coder.decode(original2)
+    assert result2.dtype == np.int8
+    np.testing.assert_array_equal(result2.data, original2.data)
